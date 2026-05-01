@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Battle": {
+      "title": "Battle",
+      "description": "A live rap battle session.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "artistA": { "type": "string" },
+        "artistB": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "active", "finished"] },
+        "votesA": { "type": "number" },
+        "votesB": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "artistA", "artistB", "status", "votesA", "votesB", "createdAt", "updatedAt"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "An individual vote cast by an audience member.",
+      "type": "object",
+      "properties": {
+        "battleId": { "type": "string" },
+        "voterId": { "type": "string" },
+        "choice": { "type": "string", "enum": ["A", "B"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["battleId", "voterId", "choice", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/battles/{battleId}": {
+      "schema": "Battle",
+      "description": "Collection of rap battles."
+    },
+    "/votes/{voteId}": {
+      "schema": "Vote",
+      "description": "Collection of individual votes, indexed by voterId_battleId."
+    }
+  }
+}
