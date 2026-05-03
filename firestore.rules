@@ -15,11 +15,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // Pre-authorized admin: bradleyjsmithuk@gmail.com
+    // Pre-authorised admin: bradleyjsmithuk@gmail.com
     function isAdmin() {
-      return isEmailVerified() && (
+      return isSignedIn() && (
         request.auth.token.email == 'bradleyjsmithuk@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
+        (exists(/databases/$(database)/documents/admins/$(request.auth.token.email)) && request.auth.token.email_verified == true)
       );
     }
 
@@ -102,7 +102,7 @@ service cloud.firestore {
 
     match /votes/{voteId} {
       allow get: if isSignedIn() && resource.data.voterId == request.auth.uid;
-      allow list: if false;
+      allow list: if isSignedIn() && request.query.limit <= 100 && resource.data.voterId == request.auth.uid;
 
       allow create: if isSignedIn() 
         && voteId == request.auth.uid + '_' + incoming().battleId

@@ -92,35 +92,42 @@ export default function App() {
 
   // Auth & Initial Setup
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        setUser(u);
-        setAuthError(null);
-      } else {
-        setUser(null);
-        // Try anonymous for voters, but catch error if disabled
-        try {
-          await signInAnonymously(auth);
-        } catch (error: any) {
-          if (error.code === 'auth/admin-restricted-operation') {
-            setAuthError("Anonymous sign-in disabled. Admin must sign in via Console.");
-          } else {
-            console.error("Auth auto-sign-in error:", error);
-          }
-        }
+    // Safety timeout for auth readiness
+    const timeoutId = setTimeout(() => {
+      if (!isAuthReady) {
+        setIsAuthReady(true);
+        setAuthError("Authentication taking longer than expected. Please refresh or check your connection.");
       }
+    }, 8000);
+
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
       setIsAuthReady(true);
+      clearTimeout(timeoutId);
+      if (u) setAuthError(null);
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      unsubscribe();
+      clearTimeout(timeoutId);
+    };
+  }, [isAuthReady]);
 
   const handleGoogleLogin = async () => {
     try {
       setAuthError(null);
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed", error);
-      setAuthError("Login failed. Please check your browser settings and try again.");
+      let msg = "Sign-in failed. ";
+      if (error.code === 'auth/popup-blocked') {
+        msg += "Your browser blocked the login popup. Please enable popups for this site.";
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        msg += "Login window was closed before completion.";
+      } else {
+        msg += error.message || "Please check your internet connection.";
+      }
+      setAuthError(msg);
     }
   };
 
@@ -193,7 +200,7 @@ export default function App() {
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
-              <span className="mono text-[10px] uppercase text-zinc-500 tracking-widest font-bold">Peacocks Arena</span>
+              <span className="mono text-[10px] uppercase text-zinc-500 tracking-widest font-bold">Live event voting by BJStudios</span>
             </div>
           </div>
         </div>
@@ -228,7 +235,7 @@ export default function App() {
           <VoterView battles={activeBattles} votedBattles={votedBattles} user={user} authError={authError} onLogin={handleGoogleLogin} />
         )}
         {view === 'admin' && (
-          <AdminView battles={activeBattles} user={user} admins={admins} onLogin={handleGoogleLogin} onLogout={handleLogout} />
+          <AdminView battles={activeBattles} user={user} admins={admins} authError={authError} onLogin={handleGoogleLogin} onLogout={handleLogout} />
         )}
         {view === 'display' && (
           <DisplayView battles={activeBattles} />
@@ -268,17 +275,30 @@ function VoterView({ battles, votedBattles, user, authError, onLogin }: { battle
     }
   };
 
-  if (authError && !user) {
+  if (!user) {
     return (
       <div className="h-[80vh] flex flex-col items-center justify-center p-12 text-center">
-        <h2 className="text-xl font-black uppercase text-orange-500 mb-4 italic">Identity Required</h2>
-        <p className="text-sm text-zinc-400 mb-8 max-w-md">Anonymous voting is disabled. Please verify your identity to participate in the arena.</p>
-        <button 
-          onClick={onLogin}
-          className="bg-orange-500 text-white px-8 py-4 font-black uppercase italic skew-btn-left hover:bg-orange-400 flex items-center gap-3"
-        >
-          <LogIn size={20} /> Verify with Google
-        </button>
+        <div className="bg-zinc-900 border border-zinc-800 p-12 shadow-2xl max-w-md">
+          <LogIn size={48} className="mx-auto mb-6 text-orange-500 opacity-50" />
+          <h2 className="text-2xl font-black uppercase text-white mb-4 italic">Identity Required</h2>
+          <p className="text-sm text-zinc-400 mb-8 lowercase">This arena uses verified voting protocols. Please sign in with Google to cast your vote.</p>
+          {authError && (
+            <div className="mb-6 p-4 bg-red-600/20 border border-red-500 text-red-400 text-[10px] font-bold uppercase tracking-widest leading-relaxed">
+              !! ERROR: {authError} !!
+            </div>
+          )}
+          <div className="space-y-3">
+            <button 
+              onClick={onLogin}
+              className="w-full bg-orange-500 text-white px-8 py-4 font-black uppercase italic skew-btn-left hover:bg-orange-400 flex items-center justify-center gap-3 transition-all"
+            >
+              <LogIn size={20} /> Verify with Google
+            </button>
+            <p className="text-[9px] text-zinc-600 uppercase font-bold tracking-widest">
+              Problems? ensure pop-ups are permitted for this domain
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
@@ -434,7 +454,7 @@ function VoterView({ battles, votedBattles, user, authError, onLogin }: { battle
   );
 }
 
-function AdminView({ battles, user, admins, onLogin, onLogout }: { battles: Battle[], user: any, admins: string[], onLogin: () => void, onLogout: () => void }) {
+function AdminView({ battles, user, admins, authError, onLogin, onLogout }: { battles: Battle[], user: any, admins: string[], authError: string | null, onLogin: () => void, onLogout: () => void }) {
   const [showAdd, setShowAdd] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [newBattle, setNewBattle] = useState({ title: '', artistA: '', artistB: '', startNow: false });
@@ -518,6 +538,23 @@ function AdminView({ battles, user, admins, onLogin, onLogout }: { battles: Batt
       handleFirestoreError(error, OperationType.DELETE, `battles/${id}`);
     }
   };
+
+  if (authError) {
+    return (
+      <div className="h-[60vh] flex flex-col items-center justify-center text-center">
+        <div className="bg-zinc-900 border border-zinc-800 p-12 shadow-2xl max-w-xl">
+          <h2 className="text-3xl font-black uppercase italic text-red-500 mb-4 tracking-tighter">Connection Error</h2>
+          <p className="text-zinc-400 mb-8 lowercase font-mono text-sm">{authError}</p>
+          <button 
+            onClick={onLogin}
+            className="w-full bg-zinc-100 text-black px-8 py-4 font-black uppercase italic skew-btn-left hover:bg-white transition-all flex items-center justify-center gap-3"
+          >
+            <LogIn size={20} /> Retry Access
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (!user || !user.email) {
     return (
